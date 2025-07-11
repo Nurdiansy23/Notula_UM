@@ -1,114 +1,97 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
-const path = require ("path");
+const path = require("path");
 const OpenAI = require("openai");
 
 const app = express();
 
+// Middleware
 app.use(cors());
 app.use(express.json());
+
+// Serve frontend static files from /public
 app.use(express.static(path.join(__dirname, "public")));
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-// Endpoint untuk memperbaiki tanda baca (tidak berubah)
-app.post("/punctuate", async (req, res) => {
+// 1) Endpoint untuk memperbaiki tanda baca
+app.post("/api/punctuate", async (req, res) => {
   const { text } = req.body;
-  if (!text) {
-    return res.status(400).json({ error: "Text is required" });
-  }
+  if (!text) return res.status(400).json({ error: "Text is required" });
   try {
     const response = await openai.chat.completions.create({
       model: "gpt-3.5-turbo",
       messages: [
         {
           role: "system",
-          content: "You are a text formatter. Your job is to add punctuation and proper capitalization to spoken Indonesian text. In the events that sentence structural mistakes are present, you are to fix the sentence to a proper formatting and structure. Your output must ONLY be the corrected text. Do not add any commentary, explanations, or introductory text. If the text is too short (fewer than three words), simply return it unchanged.",
+          content: "You are a text formatter. Your job is to add punctuation and proper capitalization to spoken Indonesian text. Do not add any commentary.",
         },
-        {
-          role: "user",
-          content: text,
-        },
+        { role: "user", content: text },
       ],
       temperature: 0.3,
     });
-    const formattedText = response.choices[0].message.content.trim();
-    res.json({ formattedText });
-  } catch (error) {
-    console.error("Error in /punctuate:", error);
+    res.json({ formattedText: response.choices[0].message.content.trim() });
+  } catch (err) {
+    console.error("Error in /api/punctuate:", err);
     res.status(500).json({ error: "Failed to punctuate text" });
   }
 });
 
-// Endpoint untuk ringkasan (tidak berubah)
+// 2) Endpoint untuk ringkasan teks
 app.post("/api/summarize-text", async (req, res) => {
   const { text } = req.body;
-  if (!text || text.trim() === "") {
-    return res.status(400).json({ error: "Teks tidak boleh kosong untuk diringkas." });
-  }
+  if (!text || !text.trim()) return res.status(400).json({ error: "Teks tidak boleh kosong" });
   try {
     const response = await openai.chat.completions.create({
       model: "gpt-3.5-turbo",
       messages: [
-        {
-          role: "system",
-          content: "Anda adalah asisten yang sangat baik dalam membuat ringkasan teks dalam Bahasa Indonesia. Buatlah ringkasan yang jelas, padat, dan menangkap poin-poin utama dari teks yang diberikan."
-        },
-        {
-          role: "user",
-          content: `Tolong buatkan ringkasan dari teks berikut:\n\n${text}`
-        }
+        { role: "system", content: "Buat ringkasan yang jelas dan padat dalam Bahasa Indonesia." },
+        { role: "user", content: `Tolong buatkan ringkasan dari teks berikut:\n\n${text}` },
       ],
       temperature: 0.5,
     });
-    const summary = response.choices[0].message.content.trim();
-    res.json({ summary });
-  } catch (error) {
-    console.error("Error in /api/summarize-text:", error);
-    res.status(500).json({ error: "Gagal membuat ringkasan di server." });
+    res.json({ summary: response.choices[0].message.content.trim() });
+  } catch (err) {
+    console.error("Error in /api/summarize-text:", err);
+    res.status(500).json({ error: "Gagal membuat ringkasan" });
   }
 });
 
-// --- PENAMBAHAN BARU: Endpoint untuk mendapatkan Topik Pembahasan ---
+// 3) Endpoint untuk mendapatkan topik pembahasan
 app.post("/api/get-topic", async (req, res) => {
   const { text } = req.body;
-  if (!text || text.trim() === "") {
-    return res.status(400).json({ error: "Teks tidak boleh kosong untuk diidentifikasi topiknya." });
-  }
+  if (!text || !text.trim()) return res.status(400).json({ error: "Teks tidak boleh kosong" });
   try {
     const response = await openai.chat.completions.create({
       model: "gpt-3.5-turbo",
       messages: [
         {
           role: "system",
-          content: "Anda adalah seorang analis ahli. Berdasarkan keseluruhan teks diskusi berikut, identifikasi dan sebutkan topik utama atau persoalan yang sedang dibahas dalam satu kalimat singkat."
+          content: "Anda adalah analis ahli. Identifikasi topik utama dari teks berikut dalam satu kalimat singkat.",
         },
-        {
-          role: "user",
-          content: `Identifikasi topik utama dari teks berikut:\n\n${text}`
-        }
+        { role: "user", content: `Identifikasi topik utama dari teks berikut:\n\n${text}` },
       ],
       temperature: 0.3,
     });
-    const topic = response.choices[0].message.content.trim();
-    res.json({ topic }); // Mengirim kembali objek dengan properti 'topic'
-  } catch (error) {
-    console.error("Error in /api/get-topic:", error);
-    res.status(500).json({ error: "Gagal mengidentifikasi topik di server." });
+    res.json({ topic: response.choices[0].message.content.trim() });
+  } catch (err) {
+    console.error("Error in /api/get-topic:", err);
+    res.status(500).json({ error: "Gagal mengidentifikasi topik" });
   }
 });
-// --- AKHIR PENAMBAHAN ---
 
-
-// Endpoint Deepgram Token (tidak berubah)
-app.get("/deepgram-token", (req, res) => {
+// 4) Endpoint untuk token Deepgram
+app.get("/api/deepgram-token", (req, res) => {
   res.json({ key: process.env.DG_KEY });
+});
+
+// 5) Catch-all untuk SPA Vue
+app.get("/*", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
 const port = process.env.PORT || 3000;
 app.listen(port, () => {
-  console.log(`Server running on http://localhost:${port}`);
+  console.log(`Server running on port ${port}`);
 });
