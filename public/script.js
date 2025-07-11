@@ -179,6 +179,123 @@ const app = new Vue({
       this.currentSegmentWords = [];
       this.summaryResult = null;
     }
+    // PASTE SELURUH KODE DI BAWAH INI SETELAH FUNGSI clearTranscript()
+
+async fetchSummaryAndDownload() {
+    if (this.isGeneratingSummary) return;
+    if (!this.singleTranscript) {
+        alert("Tidak ada transkripsi untuk diringkas dan diunduh!");
+        return;
+    }
+    this.isGeneratingSummary = true;
+
+    try {
+        const groupedTranscript = [];
+        if (this.groupTranscript.length > 0) {
+            groupedTranscript.push({
+                speaker: this.groupTranscript[0].speaker,
+                word: this.groupTranscript[0].word
+            });
+            for (let i = 1; i < this.groupTranscript.length; i++) {
+                const currentSegment = this.groupTranscript[i];
+                const lastGroupedSegment = groupedTranscript[groupedTranscript.length - 1];
+                if (currentSegment.speaker === lastGroupedSegment.speaker) {
+                    lastGroupedSegment.word += ' ' + currentSegment.word;
+                } else {
+                    groupedTranscript.push({
+                        speaker: currentSegment.speaker,
+                        word: currentSegment.word
+                    });
+                }
+            }
+        }
+
+        const summaryPromises = groupedTranscript.map(segment =>
+            fetch('/api/summarize-text', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text: segment.word })
+            }).then(res => res.json())
+        );
+
+        const overallSummaryPromise = fetch('/api/summarize-text', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: this.singleTranscript })
+        }).then(res => res.json());
+
+        const topicPromise = fetch('/api/get-topic', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: this.singleTranscript })
+        }).then(res => res.json());
+
+        const [individualSummaries, overallSummaryResult, topicResult] = await Promise.all([
+            Promise.all(summaryPromises),
+            overallSummaryPromise,
+            topicPromise
+        ]);
+
+        const processedData = groupedTranscript.map((segment, index) => ({
+            speaker: segment.speaker,
+            summary: individualSummaries[index]?.summary || "Tidak ada ringkasan."
+        }));
+
+        const overallSummary = overallSummaryResult.summary || "Tidak ada simpulan.";
+        const topic = topicResult.topic || "Topik tidak teridentifikasi.";
+
+        this.generateAndDownloadRTFInternal(processedData, overallSummary, topic);
+
+    } catch (error) {
+        console.error("Error fetching or processing summary:", error);
+        alert(`Terjadi kesalahan saat membuat ringkasan: ${error.message}`);
+    } finally {
+        this.isGeneratingSummary = false;
+    }
+},
+
+generateAndDownloadRTFInternal(processedData, overallSummary, topic) {
+    let rtfContentParts = [];
+    rtfContentParts.push(`{\\b NOTULEN RAPAT}\\par\\par`);
+    const tableRowDefinition = `{\\trowd \\trgaph108 \\trvalignm\\clbrdrt\\brdrs\\brdrw10 \\clbrdrl\\brdrs\\brdrw10 \\clbrdrb\\brdrs\\brdrw10 \\clbrdrr\\brdrs\\brdrw10 \\cellx3000\\clbrdrt\\brdrs\\brdrw10 \\clbrdrl\\brdrs\\brdrw10 \\clbrdrb\\brdrs\\brdrw10 \\clbrdrr\\brdrs\\brdrw10 \\cellx7500\\clbrdrt\\brdrs\\brdrw10 \\clbrdrl\\brdrs\\brdrw10 \\clbrdrb\\brdrs\\brdrw10 \\clbrdrr\\brdrs\\brdrw10 \\cellx10000`;
+    const tableHeader = `${tableRowDefinition}\\pard\\intbl {\\b PERSOALAN}\\cell\\pard\\intbl {\\b TANGGAPAN PESERTA}\\cell\\pard\\intbl {\\b SIMPULAN/REKOMENDASI PIMPINAN}\\cell \\row}`;
+    rtfContentParts.push(tableHeader);
+    const tanggapanParts = [];
+    processedData.forEach((data, index) => {
+        const pointNumber = index + 1;
+        const speakerText = `{\\b ${pointNumber}. ${this.escapeRtfText(String(data.speaker))}:}`;
+        const wordText = this.escapeRtfText(String(data.summary).trim());
+        tanggapanParts.push(`${speakerText} ${wordText}`);
+    });
+    const tanggapanKonten = tanggapanParts.join('\\par ');
+    const simpulanKonten = this.escapeRtfText(String(overallSummary));
+    const persoalanKonten = this.escapeRtfText(String(topic));
+    const cell1_Persoalan = `\\pard\\intbl ${persoalanKonten}\\cell`;
+    const cell2_Tanggapan = `\\pard\\intbl ${tanggapanKonten}\\cell`;
+    const cell3_Simpulan = `\\pard\\intbl ${simpulanKonten}\\cell`;
+    const tableRow = `${tableRowDefinition}${cell1_Persoalan}${cell2_Tanggapan}${cell3_Simpulan}\\row}`;
+    rtfContentParts.push(tableRow);
+    rtfContentParts.push('}');
+    const rtfBody = rtfContentParts.join("\n");
+    const rtf = `{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0 Arial;}}\\viewkind4\\uc1\\pard\\f0\\fs24 ${rtfBody}}`;
+    const blob = new Blob([rtf], { type: "application/rtf" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = "Notulen_Rapat.rtf";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+},
+
+escapeRtfText(text) {
+    if (text === undefined || text === null) return "";
+    let newText = String(text);
+    newText = newText.replace(/\\/g, "\\\\");
+    newText = newText.replace(/{/g, "\\{");
+    newText = newText.replace(/}/g, "\\}");
+    newText = newText.replace(/\r\n/g, "\\par ").replace(/\n/g, "\\par ");
+    return newText;
+}
   },
   computed: {
     singleTranscript() {
