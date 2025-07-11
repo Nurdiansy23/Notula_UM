@@ -1,26 +1,32 @@
+// File: api/get-topic.js
 
 export default function handler(request, response) {
-  // 1. Pastikan hanya method POST yang diizinkan, sesuai permintaan dari client
+  // 1. Pastikan request yang masuk menggunakan metode POST
   if (request.method !== 'POST') {
+    // Jika bukan POST, kirim error 405 Method Not Allowed
     response.setHeader('Allow', ['POST']);
-    return response.status(405).end(`Method ${request.method} Not Allowed`);
+    return response.status(405).json({
+      message: `Metode ${request.method} tidak diizinkan. Gunakan POST.`
+    });
   }
 
+  // Blok try...catch untuk menangani jika ada error tak terduga
   try {
-    // 2. Untuk sementara, kita kirim data contoh (dummy data)
-    // Nantinya, Anda bisa menambahkan logika yang lebih kompleks di sini
-    const topicData = {
-      topic: "Topik berhasil didapatkan dari server.",
-      summary: "Ini adalah ringkasan awal yang dibuat oleh endpoint /api/get-topic."
+    // Di sini Anda bisa menambahkan logika yang lebih kompleks nanti.
+    // Untuk sekarang, kita hanya akan mengirim data contoh (dummy data).
+    const dataToSend = {
+      topic: "Topik berhasil diambil dari server via /api/get-topic",
+      notes: "Ini adalah catatan awal dari server."
     };
 
-    // 3. Kirim balasan SUKSES (status 200) dengan data dalam format JSON
-    // Ini akan memperbaiki error "is not valid JSON" di browser
-    return response.status(200).json(topicData);
+    // 2. Kirim balasan SUKSES (status 200) dengan data dalam format JSON
+    return response.status(200).json(dataToSend);
 
   } catch (error) {
-    // Jika ada error tak terduga di server, kirim balasan error 500
-    console.error(error);
-    return response.status(500).json({ message: 'Terjadi kesalahan di server.' });
+    // Jika terjadi error di dalam blok try, kirim balasan error server (500)
+    console.error("Error pada /api/get-topic:", error);
+    return response.status(500).json({
+      message: "Terjadi kesalahan internal pada server."
+    });
   }
 }
