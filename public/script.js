@@ -1,3 +1,4 @@
+<script>
 const app = new Vue({
   el: "#app",
   data: {
@@ -16,7 +17,7 @@ const app = new Vue({
       pending: [],
     },
     summaryResult: null,
-    isGeneratingSummary: false, 
+    isGeneratingSummary: false,
     lastWordTime: Date.now(),
     lockedSpeakers: {}, // speaker locking
     currentSpeaker: null,        // for segment buffering
@@ -47,7 +48,7 @@ const app = new Vue({
     this.setModeBasedOnUrlParam();
     await this.getUserMic();
   },
-methods: {
+  methods: {
     setModeBasedOnUrlParam() {
       const url = new URL(location.href);
       const search = new URLSearchParams(url.search);
@@ -91,7 +92,10 @@ methods: {
           return;
         }
         this.settings.transcription = type;
-        const { key } = await fetch("/deepgram-token").then((r) => r.json());
+        const { key } = await fetch("/api/deepgram-token").then(async r => {
+          if (!r.ok) throw new Error(await r.text());
+          return r.json();
+        });
         const wsUrl =
           "wss://api.deepgram.com/v1/listen?" +
           "model=nova-2&punctuate=true&diarize=true" +
@@ -129,7 +133,8 @@ methods: {
       const rawId = words[0].speaker ?? 0;
       if (!(rawId in this.lockedSpeakers)) {
         const used = Object.values(this.lockedSpeakers);
-        let n = 1; while (used.includes(`Speaker ${n}`)) n++;
+        let n = 1;
+        while (used.includes(`Speaker ${n}`)) n++;
         this.lockedSpeakers[rawId] = `Speaker ${n}`;
       }
       const speaker = this.lockedSpeakers[rawId];
@@ -146,23 +151,156 @@ methods: {
     },
     async flushSegment() {
       if (!this.currentSegmentWords.length || !this.currentSpeaker) return;
-      const rawText = this.currentSegmentWords.join(' ').trim();
+      const rawText = this.currentSegmentWords.join(" ").trim();
       let formatted = rawText;
       try {
-        const resp = await fetch('/punctuate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: rawText })
+        const resp = await fetch("/api/punctuate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: rawText }),
         });
-        const json = await resp.json();
-        if (json.formattedText) formatted = json.formattedText;
+        if (!resp.ok) {
+          console.error("Punctuate API error:", await resp.text());
+        } else {
+          const json = await resp.json();
+          if (json.formattedText) formatted = json.formattedText;
+        }
       } catch (e) {
-        console.error('Punctuation error:', e);
+        console.error("Punctuation error:", e);
       }
-      this.phrases.final.push({ speaker: this.currentSpeaker, word: formatted.trim() });
+      this.phrases.final.push({
+        speaker: this.currentSpeaker,
+        word: formatted.trim(),
+      });
       this.currentSegmentWords = [];
     },
-    async fixPunctuation() {},
+    async fetchSummaryAndDownload() {
+      if (this.isGeneratingSummary) return;
+      if (!this.singleTranscript) {
+        alert("Tidak ada transkripsi untuk diringkas dan diunduh!");
+        return;
+      }
+      this.isGeneratingSummary = true;
+
+      try {
+        const groupedTranscript = [];
+        if (this.groupTranscript.length > 0) {
+          groupedTranscript.push({
+            speaker: this.groupTranscript[0].speaker,
+            word: this.groupTranscript[0].word,
+          });
+          for (let i = 1; i < this.groupTranscript.length; i++) {
+            const current = this.groupTranscript[i];
+            const last = groupedTranscript[groupedTranscript.length - 1];
+            if (current.speaker === last.speaker) {
+              last.word += " " + current.word;
+            } else {
+              groupedTranscript.push({
+                speaker: current.speaker,
+                word: current.word,
+              });
+            }
+          }
+        }
+
+        const summaryPromises = groupedTranscript.map((segment) =>
+          fetch("/api/summarize-text", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ text: segment.word }),
+          }).then(async res => {
+            if (!res.ok) throw new Error(await res.text());
+            return res.json();
+          })
+        );
+        const overallSummaryPromise = fetch("/api/summarize-text", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: this.singleTranscript }),
+        }).then(async res => {
+          if (!res.ok) throw new Error(await res.text());
+          return res.json();
+        });
+        const topicPromise = fetch("/api/get-topic", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: this.singleTranscript }),
+        }).then(async res => {
+          if (!res.ok) throw new Error(await res.text());
+          return res.json();
+        });
+
+        const [
+          individualSummaries,
+          overallSummaryResult,
+          topicResult,
+        ] = await Promise.all([
+          Promise.all(summaryPromises),
+          overallSummaryPromise,
+          topicPromise,
+        ]);
+
+        const processedData = groupedTranscript.map((seg, i) => ({
+          speaker: seg.speaker,
+          summary: individualSummaries[i]?.summary || "Tidak ada ringkasan.",
+        }));
+        const overallSummary = overallSummaryResult.summary || "Tidak ada simpulan.";
+        const topic = topicResult.topic || "Topik tidak teridentifikasi.";
+
+        this.generateAndDownloadRTFInternal(processedData, overallSummary, topic);
+      } catch (error) {
+        console.error("Error fetching or processing summary:", error);
+        alert(`Terjadi kesalahan saat membuat ringkasan: ${error.message}`);
+      } finally {
+        this.isGeneratingSummary = false;
+      }
+    },
+    generateAndDownloadRTFInternal(processedData, overallSummary, topic) {
+      let parts = [];
+      parts.push(`{\\b NOTULEN RAPAT}\\par\\par`);
+      const rowDef = `{\\trowd \\trgaph108 \\trvalignm
+        \\clbrdrt\\brdrs\\brdrw10 \\clbrdrl\\brdrs\\brdrw10 \\clbrdrb\\brdrs\\brdrw10 \\clbrdrr\\brdrs\\brdrw10 \\cellx3000
+        \\clbrdrt\\brdrs\\brdrw10 \\clbrdrl\\brdrs\\brdrw10 \\clbrdrb\\brdrs\\brdrw10 \\clbrdrr\\brdrs\\brdrw10 \\cellx7500
+        \\clbrdrt\\brdrs\\brdrw10 \\clbrdrl\\brdrs\\brdrw10 \\clbrdrb\\brdrs\\brdrw10 \\clbrdrr\\brdrs\\brdrw10 \\cellx10000`;
+      const header = `${rowDef}
+        \\pard\\intbl {\\b PERSOALAN}\\cell 
+        \\pard\\intbl {\\b TANGGAPAN PESERTA}\\cell 
+        \\pard\\intbl {\\b SIMPULAN/REKOMENDASI PIMPINAN}\\cell \\row}`;
+      parts.push(header);
+
+      const tanggapan = processedData.map((d, i) => {
+        const num = i + 1;
+        return `{\\b ${num}. ${this.escapeRtfText(d.speaker)}:} ${this.escapeRtfText(d.summary)}`;
+      }).join("\\par ");
+      const persoalan = this.escapeRtfText(topic);
+      const simpulan  = this.escapeRtfText(overallSummary);
+
+      const row = `${rowDef}
+        \\pard\\intbl ${persoalan}\\cell
+        \\pard\\intbl ${tanggapan}\\cell
+        \\pard\\intbl ${simpulan}\\cell
+        \\row}`;
+      parts.push(row);
+      parts.push("}");
+      const body = parts.join("\n");
+      const rtf = `{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0 Arial;}}\\viewkind4\\uc1\\pard\\f0\\fs24 ${body}}`;
+      const blob = new Blob([rtf], { type: "application/rtf" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = "Notulen_Rapat.rtf";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    },
+    escapeRtfText(text) {
+      if (text == null) return "";
+      return String(text)
+        .replace(/\\/g, "\\\\")
+        .replace(/{/g, "\\{")
+        .replace(/}/g, "\\}")
+        .replace(/\r\n/g, "\\par ")
+        .replace(/\n/g, "\\par ");
+    },
     stopTranscription() {
       if (this.mic.mediaRecorder && this.mic.mediaRecorder.state !== "inactive")
         this.mic.mediaRecorder.stop();
@@ -178,191 +316,36 @@ methods: {
       this.currentSegmentWords = [];
       this.summaryResult = null;
     },
-  async fetchSummaryAndDownload() {
-    if (this.isGeneratingSummary) return;
-    if (!this.singleTranscript) {
-        alert("Tidak ada transkripsi untuk diringkas dan diunduh!");
-        return;
-    }
-    this.isGeneratingSummary = true;
+  }, // <-- koma setelah methods
 
-    try {
-        // Mengelompokkan transkrip mentah berdasarkan pembicara
-        const groupedTranscript = [];
-        if (this.groupTranscript.length > 0) {
-            groupedTranscript.push({
-                speaker: this.groupTranscript[0].speaker,
-                word: this.groupTranscript[0].word
-            });
-            for (let i = 1; i < this.groupTranscript.length; i++) {
-                const currentSegment = this.groupTranscript[i];
-                const lastGroupedSegment = groupedTranscript[groupedTranscript.length - 1];
-                if (currentSegment.speaker === lastGroupedSegment.speaker) {
-                    lastGroupedSegment.word += ' ' + currentSegment.word;
-                } else {
-                    groupedTranscript.push({
-                        speaker: currentSegment.speaker,
-                        word: currentSegment.word
-                    });
-                }
-            }
-        }
-
-        // --- PERUBAHAN DI SINI: Menyiapkan 3 jenis "pekerjaan" untuk AI ---
-
-        // Pekerjaan 1: Meringkas setiap tanggapan peserta
-        const summaryPromises = groupedTranscript.map(segment => 
-            fetch('/api/summarize-text', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ text: segment.word })
-            }).then(res => res.json())
-        );
-
-        // Pekerjaan 2: Mendapatkan SATU ringkasan KESELURUHAN untuk kolom simpulan
-        const overallSummaryPromise = fetch('/api/summarize-text', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: this.singleTranscript })
-        }).then(res => res.json());
-
-        // Pekerjaan 3: Mendapatkan TOPIK UTAMA untuk kolom persoalan
-        const topicPromise = fetch('/api/get-topic', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: this.singleTranscript })
-        }).then(res => res.json());
-
-        // Menjalankan semua pekerjaan secara bersamaan dan menunggu hasilnya
-        const [individualSummaries, overallSummaryResult, topicResult] = await Promise.all([
-            Promise.all(summaryPromises),
-            overallSummaryPromise,
-            topicPromise
-        ]);
-
-        // Menyiapkan data yang sudah diolah
-        const processedData = groupedTranscript.map((segment, index) => ({
-            speaker: segment.speaker,
-            summary: individualSummaries[index]?.summary || "Tidak ada ringkasan."
-        }));
-
-        const overallSummary = overallSummaryResult.summary || "Tidak ada simpulan.";
-        const topic = topicResult.topic || "Topik tidak teridentifikasi.";
-
-        // Memanggil fungsi RTF dengan semua data yang sudah matang
-        this.generateAndDownloadRTFInternal(processedData, overallSummary, topic);
-
-    } catch (error) {
-        console.error("Error fetching or processing summary:", error);
-        alert(`Terjadi kesalahan saat membuat ringkasan: ${error.message}`);
-    } finally {
-        this.isGeneratingSummary = false;
-    }
-},
-
-// Mengubah fungsi ini untuk menerima parameter 'topic'
-generateAndDownloadRTFInternal(processedData, overallSummary, topic) {
-    let rtfContentParts = [];
-    rtfContentParts.push(`{\\b NOTULEN RAPAT}\\par\\par`);
-
-    const tableRowDefinition = `{\\trowd \\trgaph108 \\trvalignm
-        \\clbrdrt\\brdrs\\brdrw10 \\clbrdrl\\brdrs\\brdrw10 \\clbrdrb\\brdrs\\brdrw10 \\clbrdrr\\brdrs\\brdrw10 \\cellx3000
-        \\clbrdrt\\brdrs\\brdrw10 \\clbrdrl\\brdrs\\brdrw10 \\clbrdrb\\brdrs\\brdrw10 \\clbrdrr\\brdrs\\brdrw10 \\cellx7500
-        \\clbrdrt\\brdrs\\brdrw10 \\clbrdrl\\brdrs\\brdrw10 \\clbrdrb\\brdrs\\brdrw10 \\clbrdrr\\brdrs\\brdrw10 \\cellx10000`;
-
-    const tableHeader = `${tableRowDefinition}
-        \\pard\\intbl {\\b PERSOALAN}\\cell 
-        \\pard\\intbl {\\b TANGGAPAN PESERTA}\\cell 
-        \\pard\\intbl {\\b SIMPULAN/REKOMENDASI PIMPINAN}\\cell \\row}`;
-    
-    rtfContentParts.push(tableHeader);
-    
-    const tanggapanParts = [];
-    processedData.forEach((data, index) => {
-        const pointNumber = index + 1;
-        const speakerText = `{\\b ${pointNumber}. ${this.escapeRtfText(String(data.speaker))}:}`;
-        const wordText = this.escapeRtfText(String(data.summary).trim());
-        tanggapanParts.push(`${speakerText} ${wordText}`);
-    });
-    const tanggapanKonten = tanggapanParts.join('\\par ');
-
-    const simpulanKonten = this.escapeRtfText(String(overallSummary));
-    // --- PERUBAHAN DI SINI: Mengisi kolom persoalan dengan topik ---
-    const persoalanKonten = this.escapeRtfText(String(topic));
-    
-    const cell1_Persoalan = `\\pard\\intbl ${persoalanKonten}\\cell`;
-    const cell2_Tanggapan = `\\pard\\intbl ${tanggapanKonten}\\cell`;
-    const cell3_Simpulan = `\\pard\\intbl ${simpulanKonten}\\cell`;
-    
-    const tableRow = `${tableRowDefinition}
-        ${cell1_Persoalan}
-        ${cell2_Tanggapan}
-        ${cell3_Simpulan}
-        \\row}`;
-    rtfContentParts.push(tableRow);
-    rtfContentParts.push('}');
-
-    const rtfBody = rtfContentParts.join("\n");
-    const rtf = `{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0 Arial;}}\\viewkind4\\uc1\\pard\\f0\\fs24 ${rtfBody}}`;
-    const blob = new Blob([rtf], { type: "application/rtf" });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = "Notulen_Rapat.rtf";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-},
-
-escapeRtfText: function(text) {
-    if (text === undefined || text === null) return "";
-    let newText = String(text);
-    newText = newText.replace(/\\/g, "\\\\");
-    newText = newText.replace(/{/g, "\\{");
-    newText = newText.replace(/}/g, "\\}");
-    newText = newText.replace(/\r\n/g, "\\par ").replace(/\n/g, "\\par ");
-    return newText;
-}
-
- // <-- Kurung kurawal penutup untuk blok methods/ Tidak perlu koma jika ini adalah metode terakhir di dalam blok 'methods'
-  
-}, // <-- kurung kurawal penutup untuk blok methods
-   // Ini adalah blok 'computed' Anda. TIDAK PERLU DIUBAH.
   computed: {
     singleTranscript() {
-      let transcript = "";
-      let lastSp = null;
-      let sentence = "";
+      let t = "", lastSp = null, sentence = "";
       this.groupTranscript.forEach((w, i) => {
         if (lastSp && w.speaker !== lastSp) {
-          transcript += `\n\n${lastSp}: ${sentence.trim()}\n\n`;
+          t += `\n\n${lastSp}: ${sentence.trim()}\n\n`;
           sentence = "";
         }
         sentence += `${w.word} `;
         lastSp = w.speaker;
         if (i === this.groupTranscript.length - 1) {
-          transcript += `${lastSp}: ${sentence.trim()}`;
+          t += `${lastSp}: ${sentence.trim()}`;
         }
       });
-      return transcript.trim();
+      return t.trim();
     },
     groupTranscript() {
       return [...this.phrases.final];
     }
-  }, // <-- 1. Pastikan ada KOMA di sini
+  }, // <-- koma setelah computed
 
-  // 2. TAMBAHKAN SELURUH BLOK 'watch' BARU DI BAWAH INI
   watch: {
-    singleTranscript: function() {
-      // Tunggu hingga Vue selesai memperbarui tampilan
+    singleTranscript() {
       this.$nextTick(() => {
-        // Cari kotak transkrip
-        const transcriptContainer = this.$el.querySelector('.transcript-output');
-        // Jika ada, scroll ke paling bawah
-        if (transcriptContainer) {
-          transcriptContainer.scrollTop = transcriptContainer.scrollHeight;
-        }
+        const container = this.$el.querySelector(".transcript-output");
+        if (container) container.scrollTop = container.scrollHeight;
       });
     }
   }
-
-}); 
+});
+</script>
