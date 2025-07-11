@@ -227,7 +227,7 @@ methods: {
         }).then(res => res.json());
 
         // Pekerjaan 3: Mendapatkan TOPIK UTAMA untuk kolom persoalan
-        const topicPromise = fetch('/api/get-topic'), {
+        const topicPromise = fetch('/api/get-topic', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ text: this.singleTranscript })
