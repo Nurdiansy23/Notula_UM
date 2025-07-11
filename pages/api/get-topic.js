@@ -1,17 +1,22 @@
-// File: api/get-topic.js
-export default function handler(request, response) {
-  if (request.method !== 'POST') {
-    response.setHeader('Allow', ['POST']);
-    return response.status(405).json({ message: `Metode ${request.method} tidak diizinkan.` });
+// pages/api/get-topic.js
+
+export default async function handler(req, res) {
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method not allowed" });
   }
+
   try {
-    const dataToSend = {
-      topic: "Topik berhasil diambil dari server.",
-      notes: "Proses dari GitHub berhasil."
-    };
-    return response.status(200).json(dataToSend);
+    const { text } = req.body;
+    if (!text || text.trim() === "") {
+      return res.status(400).json({ error: "Text is required" });
+    }
+
+    // Layanan dummy untuk mengekstrak topik (contoh: ambil kalimat pertama)
+    const topic = text.split(".")[0] || "Topik tidak ditemukan";
+
+    res.status(200).json({ topic });
   } catch (error) {
-    console.error("Error pada /api/get-topic:", error);
-    return response.status(500).json({ message: "Terjadi kesalahan internal pada server." });
+    console.error("TOPIC ERROR:", error);
+    res.status(500).json({ error: "Internal Server Error" });
   }
 }
