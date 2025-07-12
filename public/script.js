@@ -91,8 +91,11 @@ const app = new Vue({
                     return;
                 }
                 this.settings.transcription = type;
-                const { key } = await fetch("/deepgram-token").then((r) => r.json());
-                const wsUrl =
+                
+                      const { key } = await fetch("/api/deepgram-token").then(async r => {
+                      if (!r.ok) throw new Error(await r.text());
+                      return r.json();
+                    });
                     "wss://api.deepgram.com/v1/listen?" +
                     "model=nova-2&punctuate=true&diarize=true" +
                     "&diarize_speaker_count=18&smart_format=true&language=id";
@@ -150,7 +153,7 @@ const app = new Vue({
             const rawText = this.currentSegmentWords.join(' ').trim();
             let formatted = rawText;
             try {
-                const resp = await fetch('/punctuate', {
+                const resp = await fetch("/api/punctuate", {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ text: rawText })
