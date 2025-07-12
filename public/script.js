@@ -272,53 +272,66 @@ const app = new Vue({
             }
         },
         generateAndDownloadRTFInternal(processedData, overallSummary, topic) {
-            let rtfContentParts = [];
-            rtfContentParts.push(`{\\b NOTULEN RAPAT}\\par\\par`);
+    let rtfContentParts = [];
+    rtfContentParts.push(`{\\b NOTULEN RAPAT}\\par\\par`);
 
-            const tableRowDefinition = `{\\trowd \\trgaph108 \\trvalignm\\clbrdrt\\brdrs\\brdrw10 \\clbrdrl\\brdrs\\brdrw10 \\clbrdrb\\brdrs\\brdrw10 \\clbrdrr\\brdrs\\brdrw10 \\cellx3000\\clbrdrt\\brdrs\\brdrw10 \\clbrdrl\\brdrs\\brdrw10 \\clbrdrb\\brdrs\\brdrw10 \\clbrdrr\\brdrs\\brdrw10 \\cellx7500\\clbrdrt\\brdrs\\brdrw10 \\clbrdrl\\brdrs\\brdrw10 \\clbrdrb\\brdrs\\brdrw10 \\clbrdrr\\brdrs\\brdrw10 \\cellx10000}`;
+    const tableRowDefinition = `{\\trowd \\trgaph108 \\trvalignm
+        \\clbrdrt\\brdrs\\brdrw10 \\clbrdrl\\brdrs\\brdrw10 \\clbrdrb\\brdrs\\brdrw10 \\clbrdrr\\brdrs\\brdrw10 \\cellx3000
+        \\clbrdrt\\brdrs\\brdrw10 \\clbrdrl\\brdrs\\brdrw10 \\clbrdrb\\brdrs\\brdrw10 \\clbrdrr\\brdrs\\brdrw10 \\cellx7500
+        \\clbrdrt\\brdrs\\brdrw10 \\clbrdrl\\brdrs\\brdrw10 \\clbrdrb\\brdrs\\brdrw10 \\clbrdrr\\brdrs\\brdrw10 \\cellx10000`;
 
-            const tableHeader = `${tableRowDefinition}\\pard\\intbl {\\b PERSOALAN}\\cell\\pard\\intbl {\\b TANGGAPAN PESERTA}\\cell\\pard\\intbl {\\b SIMPULAN/REKOMENDASI PIMPINAN}\\cell \\row}`;
-            rtfContentParts.push(tableHeader);
+    const tableHeader = `${tableRowDefinition}
+        \\pard\\intbl {\\b PERSOALAN}\\cell 
+        \\pard\\intbl {\\b TANGGAPAN PESERTA}\\cell 
+        \\pard\\intbl {\\b SIMPULAN/REKOMENDASI PIMPINAN}\\cell \\row}`;
+    
+    rtfContentParts.push(tableHeader);
+    
+    const tanggapanParts = [];
+    processedData.forEach((data, index) => {
+        const pointNumber = index + 1;
+        const speakerText = `{\\b ${pointNumber}. ${this.escapeRtfText(String(data.speaker))}:}`;
+        const wordText = this.escapeRtfText(String(data.summary).trim());
+        tanggapanParts.push(`${speakerText} ${wordText}`);
+    });
+    const tanggapanKonten = tanggapanParts.join('\\par ');
 
-            const tanggapanParts = [];
-            processedData.forEach((data, index) => {
-                const pointNumber = index + 1;
-                const speakerText = `{\\b ${pointNumber}. ${this.escapeRtfText(String(data.speaker))}:}`;
-                const wordText = this.escapeRtfText(String(data.summary).trim());
-                tanggapanParts.push(`${speakerText} ${wordText}`);
-            });
-            const tanggapanKonten = tanggapanParts.join('\\par ');
+    const simpulanKonten = this.escapeRtfText(String(overallSummary));
+    // --- PERUBAHAN DI SINI: Mengisi kolom persoalan dengan topik ---
+    const persoalanKonten = this.escapeRtfText(String(topic));
+    
+    const cell1_Persoalan = `\\pard\\intbl ${persoalanKonten}\\cell`;
+    const cell2_Tanggapan = `\\pard\\intbl ${tanggapanKonten}\\cell`;
+    const cell3_Simpulan = `\\pard\\intbl ${simpulanKonten}\\cell`;
+    
+    const tableRow = `${tableRowDefinition}
+        ${cell1_Persoalan}
+        ${cell2_Tanggapan}
+        ${cell3_Simpulan}
+        \\row}`;
+    rtfContentParts.push(tableRow);
+    rtfContentParts.push('}');
 
-            const simpulanKonten = this.escapeRtfText(String(overallSummary));
-            const persoalanKonten = this.escapeRtfText(String(topic));
+    const rtfBody = rtfContentParts.join("\n");
+    const rtf = `{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0 Arial;}}\\viewkind4\\uc1\\pard\\f0\\fs24 ${rtfBody}}`;
+    const blob = new Blob([rtf], { type: "application/rtf" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = "Notulen_Rapat.rtf";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+},
 
-            const cell1_Persoalan = `\\pard\\intbl ${persoalanKonten}\\cell`;
-            const cell2_Tanggapan = `\\pard\\intbl ${tanggapanKonten}\\cell`;
-            const cell3_Simpulan = `\\pard\\intbl ${simpulanKonten}\\cell`;
-
-            const tableRow = `${tableRowDefinition}${cell1_Persoalan}${cell2_Tanggapan}${cell3_Simpulan}\\row}`;
-            rtfContentParts.push(tableRow);
-            rtfContentParts.push('}');
-
-            const rtfBody = rtfContentParts.join("\n");
-            const rtf = `{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0 Arial;}}\\viewkind4\\uc1\\pard\\f0\\fs24 ${rtfBody}}`;
-            const blob = new Blob([rtf], { type: "application/rtf" });
-            const link = document.createElement("a");
-            link.href = URL.createObjectURL(blob);
-            link.download = "Notulen_Rapat.rtf";
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-        },
-        escapeRtfText(text) {
-            if (text === undefined || text === null) return "";
-            let newText = String(text);
-            newText = newText.replace(/\\/g, "\\\\");
-            newText = newText.replace(/{/g, "\\{");
-            newText = newText.replace(/}/g, "\\}");
-            newText = newText.replace(/\r\n/g, "\\par ").replace(/\n/g, "\\par ");
-            return newText;
-        }
+escapeRtfText: function(text) {
+    if (text === undefined || text === null) return "";
+    let newText = String(text);
+    newText = newText.replace(/\\/g, "\\\\");
+    newText = newText.replace(/{/g, "\\{");
+    newText = newText.replace(/}/g, "\\}");
+    newText = newText.replace(/\r\n/g, "\\par ").replace(/\n/g, "\\par ");
+    return newText;
+}
     },
     computed: {
         singleTranscript() {
