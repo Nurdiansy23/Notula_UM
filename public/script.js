@@ -84,44 +84,61 @@ const app = new Vue({
                 alert(`Gagal mengakses mikrofon: ${err.message}`);
             }
         },
-        async beginTranscription(type = "single") {
-            try {
-                if (!this.mic.mediaRecorder) {
-                    alert("Mikrofon belum diakses, silakan refresh dan izinkan akses mikrofon.");
-                    return;
-                }
-                this.settings.transcription = type;
-                
-                      const { key } = await fetch("/api/deepgram-token").then(async r => {
-                      if (!r.ok) throw new Error(await r.text());
-                      return r.json();
-                    });
-                    "wss://api.deepgram.com/v1/listen?" +
-                    "model=nova-2&punctuate=true&diarize=true" +
-                    "&diarize_speaker_count=18&smart_format=true&language=id";
-                this.socket = new WebSocket(wsUrl, ["token", key]);
-                this.socket.onopen = () => {
-                    console.log("WebSocket connected.");
-                    this.mic.mediaRecorder.addEventListener("dataavailable", (event) => {
-                        if (event.data.size > 0 && this.socket.readyState === WebSocket.OPEN) {
-                            this.socket.send(event.data);
-                        }
-                    });
-                    this.mic.mediaRecorder.start(1000);
-                };
-                this.socket.onmessage = (message) => this.transcriptionResults(JSON.parse(message.data));
-                this.socket.onerror = (error) => {
-                    console.error("WebSocket error:", error);
-                    alert("Terjadi kesalahan pada koneksi WebSocket.");
-                };
-                this.socket.onclose = () => {
-                    console.log("WebSocket connection closed.");
-                    this.settings.transcription = false;
-                };
-            } catch (error) {
-                console.error("Error starting transcription:", error);
-                alert("Gagal memulai transkripsi.");
-            }
+       async beginTranscription(type = "single") {
+  try {
+    // 1. Pastikan mic sudah siap
+    if (!this.mic.mediaRecorder) {
+      alert("Mikrofon belum diakses, silakan refresh dan izinkan akses mikrofon.");
+      return;
+    }
+    this.settings.transcription = type;
+
+    // 2. Ambil token Deepgram dari server
+    const tokenResp = await fetch("/api/deepgram-token");
+    if (!tokenResp.ok) {
+      throw new Error(`Token API error: ${await tokenResp.text()}`);
+    }
+    const { key } = await tokenResp.json();
+    if (!key) {
+      throw new Error("Deepgram token kosong.");
+    }
+    console.log("Deepgram token:", key);
+
+    // 3. Buat URL WebSocket setelah token tersedia
+    const wsUrl =
+      "wss://api.deepgram.com/v1/listen?" +
+      "model=nova-2&punctuate=true&diarize=true&diarize_speaker_count=18" +
+      "&smart_format=true&language=id";
+    console.log("Connecting to WebSocket:", wsUrl);
+
+    // 4. Buka koneksi WebSocket
+    this.socket = new WebSocket(wsUrl, ["token", key]);
+    this.socket.onopen = () => {
+      console.log("WebSocket connected.");
+      // Mulai kirim data audio setiap detik
+      this.mic.mediaRecorder.addEventListener("dataavailable", (event) => {
+        if (event.data.size > 0 && this.socket.readyState === WebSocket.OPEN) {
+          this.socket.send(event.data);
+        }
+      });
+      this.mic.mediaRecorder.start(1000);
+    };
+
+    // 5. Tangani hasil transkripsi
+    this.socket.onmessage = (message) =>
+      this.transcriptionResults(JSON.parse(message.data));
+    this.socket.onerror = (error) => {
+      console.error("WebSocket error:", error);
+      alert("Terjadi kesalahan pada koneksi WebSocket.");
+    };
+    this.socket.onclose = () => {
+      console.log("WebSocket connection closed.");
+      this.settings.transcription = false;
+    };
+  } catch (error) {
+    console.error("Error starting transcription:", error);
+    alert("Gagal memulai transkripsi: " + error.message);
+  }
         },
         async transcriptionResults(data) {
             if (!data?.channel?.alternatives?.length) return;
