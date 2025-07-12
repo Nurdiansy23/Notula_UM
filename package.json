@@ -2,7 +2,7 @@
   "name": "speech-to-text-app",
   "version": "1.0.0",
   "scripts": {
-    "start": "node index.js"    // Vercel akan pakai ini untuk run
+    "start": "node index.js"
   },
   "dependencies": {
     "@deepgram/sdk": "^2.2.0",
@@ -14,6 +14,5 @@
   },
   "engines": {
     "node": ">=16"
-  },
-  "license": "MIT"
+  }
 }
