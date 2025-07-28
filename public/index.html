@@ -91,7 +91,7 @@
         word-wrap: break-word;
     }
 
-      }
+      
       button {
         background-color: #1ABC9C;
         color: white;
@@ -117,52 +117,109 @@
         width: 50px;
         margin: 10px;
       }
-    </style>
-  </head>
-  <body>
-    <div id="app">
-      <nav>
-        <div class="logo">🎤 Speech-to-Text Web</div>
-        <ul>
-          <li :class="{ active: settings.mode == 'transcribe' }" @click="navigateTo('transcribe')">Transkrip Saya</li>
-          <li :class="{ active: settings.mode == 'badge' }" @click="navigateTo('badge')">Dashboard</li>
-        </ul>
-        <div v-if="settings.mode == 'transcribe'" class="nav-buttons">
-          <button @click="beginTranscription('single')">Mulai Transkripsi</button>
-          <button @click="stopTranscription()" style="background-color: #e67e22;">Stop</button>
-          <button @click="clearTranscript()" style="background-color: #e74c3c;">Hapus Transkripsi</button>
+
+
+    /* --- CSS Untuk Modal Editor --- */
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0, 0, 0, 0.6);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+    }
+    .modal-content {
+      background-color: white;
+      padding: 25px;
+      border-radius: 8px;
+      box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+      width: 90%;
+      max-width: 400px;
+    }
+    .modal-content h3 {
+      margin-top: 0;
+      margin-bottom: 20px;
+      border-bottom: 1px solid #eee;
+      padding-bottom: 10px;
+    }
+    .speaker-edit-row {
+      display: flex;
+      align-items: center;
+      margin-bottom: 15px;
+    }
+    .speaker-edit-row label {
+      flex: 1;
+      font-weight: bold;
+    }
+    .speaker-edit-row input {
+      flex: 2;
+      padding: 8px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+    .modal-actions {
+      margin-top: 25px;
+      text-align: right;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <nav>
+      <div class="logo">🎤 Speech-to-Text Web</div>
+      <ul>
+        <li :class="{ active: settings.mode == 'transcribe' }" @click="navigateTo('transcribe')">Transkrip Saya</li>
+        <li :class="{ active: settings.mode == 'badge' }" @click="navigateTo('badge')">Dashboard</li>
+      </ul>
+      <div v-if="settings.mode == 'transcribe'" class="nav-buttons">
+        <button @click="beginTranscription('single')" :disabled="settings.transcription">Mulai Transkripsi</button>
+        <button @click="stopTranscription()" style="background-color: #e67e22;">Stop</button>
+        <button @click="clearTranscript()" style="background-color: #e74c3c;">Hapus</button>
+        <button @click="gantiTopik" class="btn-topic" style="background-color: #3498db;">Ganti Topik</button>
+        <button @click="openSpeakerEditor" style="background-color: #9b59b6;">Atur Pembicara</button>
+      </div>
+    </nav>
+
+    <main>
+      <section v-if="settings.mode == 'badge'" id="badge">
+        <img src="https://cdn.glitch.global/2b969e1e-9c5b-4f54-9799-1020fa8d0ed3/M.png?v=1743000177905" alt="logo Trans" />
+      </section>
+
+      <section id="transcribe" v-if="settings.mode == 'transcribe'">
+        <div v-if="!settings.transcription && groupTranscript.length === 0" class="placeholder-text">
+          <h2>Selamat Datang!</h2>
+          <p>Klik tombol "Mulai Transkripsi" di pojok kanan atas untuk memulai sesi transkripsi Anda.</p>
         </div>
-      </nav>
+        <div v-else style="flex: 1; display: flex;">
+          <textarea readonly class="transcript-output">{{ singleTranscript }}</textarea>
+        </div>
+      </section>
+    </main>
+    
+    <footer>
+      <img src="https://cdn.glitch.global/a1583462-4354-4d91-89dc-e33a7f5b7f50/logo_um.png?v=1714622545856" alt="Logo UM" />
+      <a href="#" @click.prevent="fetchSummaryAndDownload()"> <img src="https://cdn.glitch.global/5dd1ecc8-1471-4d5a-b953-964b91da39b3/edit.jpg?v=1741578799034" alt="Unduh Transkrip" style="width: 30px; height: 30px;" />
+      </a>
+    </footer>
 
-      <main>
-        <section v-if="settings.mode == 'badge'" id="badge">
- <img 
-    v-if="settings.mode !== 'transcribe'" 
-    src="https://cdn.glitch.global/2b969e1e-9c5b-4f54-9799-1020fa8d0ed3/M.png?v=1743000177905" 
-    alt="logo Trans" 
-  />
-          </section>
-
-        <section id="transcribe" v-if="settings.mode == 'transcribe'">
-          <div v-if="!settings.transcription" class="placeholder-text">
-            <h2>Selamat Datang!</h2>
-            <p>Klik tombol "Mulai Transkripsi" di pojok kanan atas untuk memulai sesi transkripsi Anda.</p>
-          </div>
-          
-          <div v-else style="flex: 1; display: flex;">
-            <textarea readonly class="transcript-output">{{ singleTranscript }}</textarea>
-          </div>
-        </section>
-      </main>
-     
-     
-      <footer>
-        <img src="https://cdn.glitch.global/a1583462-4354-4d91-89dc-e33a7f5b7f50/logo_um.png?v=1714622545856" alt="Logo UM" />
-        <a href="#" @click.prevent="fetchSummaryAndDownload()">  <img src="https://cdn.glitch.global/5dd1ecc8-1471-4d5a-b953-964b91da39b3/edit.jpg?v=1741578799034" alt="Unduh Transkrip dengan Ringkasan" style="width: 30px; height: 30px;" />
-        </a>
-      </footer>
+    <div v-if="showSpeakerEditor" class="modal-overlay">
+      <div class="modal-content">
+        <h3>Atur Nama Pembicara</h3>
+        <div v-for="(name, rawId) in lockedSpeakers" :key="rawId" class="speaker-edit-row">
+          <label>{{ name }}:</label>
+          <input type="text" v-model="speakerNameEdits[rawId]" @keyup.enter="saveSpeakerNames">
+        </div>
+        <div class="modal-actions">
+          <button @click="saveSpeakerNames" style="background-color: #27ae60;">Simpan</button>
+          <button @click="showSpeakerEditor = false" style="background-color: #c0392b;">Batal</button>
+        </div>
+      </div>
     </div>
 
-    <script src="/script.js" defer></script>
-  </body>
-</html>
+  </div> <script src="/script.js" defer></script>
+</body>
+</html> 
