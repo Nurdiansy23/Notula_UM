@@ -3,6 +3,7 @@ const express = require("express");
 const cors = require("cors");
 const path = require("path");
 const OpenAI = require("openai");
+const { createClient } = require("@deepgram/sdk");
 
 const app = express();
 
@@ -82,8 +83,24 @@ app.post("/api/get-topic", async (req, res) => {
 });
 
 // INI KODE YANG BENAR:
-app.get("/deepgram-token", (req, res) => {
-  res.json({ key: process.env.DEEPGRAM_API_KEY });
+// GANTI endpoint /deepgram-token Anda dengan yang ini:
+app.get("/deepgram-token", async (req, res) => {
+  // Inisialisasi client Deepgram dengan API Key utama
+  const deepgram = createClient(process.env.DEEPGRAM_API_KEY);
+
+  try {
+    // Buat kunci/token sementara yang berlaku 1 jam
+    const newKey = await deepgram.keys.create(
+      "Kunci sementara untuk notula", // Deskripsi bisa apa saja
+      ["usage:write"],                 // Izin yang wajib ada
+      { timeToLive: 60 * 60 }           // Waktu berlaku dalam detik (1 jam)
+    );
+    // Kirim token sementara yang baru dibuat ke browser
+    res.status(200).json({ key: newKey.key });
+  } catch (error) {
+    console.error("Error creating Deepgram key:", error);
+    res.status(500).json({ error: "Gagal membuat token Deepgram." });
+  }
 });
 
 // 5) Catch-all untuk SPA Vue
