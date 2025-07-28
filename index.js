@@ -81,9 +81,9 @@ app.post("/api/get-topic", async (req, res) => {
   }
 });
 
-// 4) Endpoint untuk token Deepgram
-app.get("/api/deepgram-token", (req, res) => {
-  res.json({ key: process.env.DG_KEY });
+// INI KODE YANG BENAR:
+app.get("/deepgram-token", (req, res) => {
+  res.json({ key: process.env.DEEPGRAM_API_KEY });
 });
 
 // 5) Catch-all untuk SPA Vue
