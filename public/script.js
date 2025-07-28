@@ -67,67 +67,88 @@ const app = new Vue({
             this.settings.mode = mode;
         },
         async getUserMic() {
-            try {
-                const permissions = await navigator.permissions.query({ name: "microphone" });
-                if (permissions.state === "denied") {
-                    alert("Akses mikrofon ditolak secara permanen. Silakan ubah pengaturan browser Anda.");
-                    this.mic.stream = null;
-                    return;
-                }
-                this.mic.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                if (!MediaRecorder.isTypeSupported("audio/webm")) {
-                    throw new Error("Browser tidak mendukung format audio/webm");
-                }
-                this.mic.mediaRecorder.addEventListener("dataavailable", (event) => {
-  if (event.data.size > 0 && this.socket.readyState === WebSocket.OPEN) {
-    console.log("Mengirim data audio ke Deepgram..."); // <-- TAMBAHKAN INI
-    this.socket.send(event.data);
-            } catch (err) {
-                console.error("Error accessing microphone:", err);
-                alert(`Gagal mengakses mikrofon: ${err.message}`);
+        try {
+            const permissions = await navigator.permissions.query({ name: "microphone" });
+            if (permissions.state === "denied") {
+                alert("Akses mikrofon ditolak permanen. Ubah pengaturan browser Anda.");
+                return;
             }
-        },
-        async beginTranscription(type = "single") {
-    // TAMBAHKAN PENGECEKAN INI
-    if (this.settings.transcription) return; 
 
-    try {
-                if (!this.mic.mediaRecorder) {
-                    alert("Mikrofon belum diakses, silakan refresh dan izinkan akses mikrofon.");
-                    return;
-                }
-                this.settings.transcription = type;
-                const { key } = await fetch("/deepgram-token").then((r) => r.json());
-                const wsUrl =
-                    "wss://api.deepgram.com/v1/listen?" +
-                    "model=nova-2&punctuate=true&diarize=true" +
-                    "&diarize_speaker_count=18&smart_format=true&language=id";
-                this.socket = new WebSocket(wsUrl, ["token", key]);
-                this.socket.onopen = () => {
-                    console.log("WebSocket connected.");
-                    this.mic.mediaRecorder.addEventListener("dataavailable", (event) => {
-                        if (event.data.size > 0 && this.socket.readyState === WebSocket.OPEN) {
-                            this.socket.send(event.data);
-                        }
-                    });
-                    this.mic.mediaRecorder.start(1000);
-                };
-              this.socket.onmessage = (message) => {
-  console.log("Menerima data dari Deepgram:", message.data); // <-- TAMBAHKAN INI
-  this.transcriptionResults(JSON.parse(message.data));
-                this.socket.onerror = (error) => {
-                    console.error("WebSocket error:", error);
-                    alert("Terjadi kesalahan pada koneksi WebSocket.");
-                };
-                this.socket.onclose = () => {
-                    console.log("WebSocket connection closed.");
-                    this.settings.transcription = false;
-                };
-            } catch (error) {
-                console.error("Error starting transcription:", error);
-                alert("Gagal memulai transkripsi.");
+            this.mic.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+            if (!MediaRecorder.isTypeSupported("audio/webm")) {
+                throw new Error("Browser tidak mendukung format audio/webm");
             }
-        },
+            
+            // Inisialisasi MediaRecorder ditempatkan di sini
+            this.mic.mediaRecorder = new MediaRecorder(this.mic.stream, {
+                mimeType: "audio/webm",
+            });
+
+            console.log("Mikrofon berhasil diakses.");
+
+        } catch (err) {
+            console.error("Error accessing microphone:", err);
+            alert(`Gagal mengakses mikrofon: ${err.message}`);
+        }
+    },
+
+    // Fungsi untuk memulai transkripsi (sudah diperbaiki)
+    async beginTranscription(type = "single") {
+        if (this.settings.transcription) return;
+
+        try {
+            if (!this.mic.mediaRecorder) {
+                alert("Mikrofon belum diakses, silakan refresh dan izinkan akses mikrofon.");
+                return;
+            }
+
+            this.settings.transcription = type;
+            const { key } = await fetch("/deepgram-token").then((r) => r.json());
+            const wsUrl =
+                "wss://api.deepgram.com/v1/listen?" +
+                "model=nova-2&punctuate=true&diarize=true" +
+                "&diarize_speaker_count=18&smart_format=true&language=id";
+            
+            this.socket = new WebSocket(wsUrl, ["token", key]);
+
+            this.socket.onopen = () => {
+                console.log("WebSocket connected.");
+
+                // Event listener untuk mengirim data audio
+                this.mic.mediaRecorder.addEventListener("dataavailable", (event) => {
+                    if (event.data.size > 0 && this.socket.readyState === WebSocket.OPEN) {
+                        console.log("Mengirim data audio ke Deepgram..."); // <-- console.log untuk cek pengiriman
+                        this.socket.send(event.data);
+                    }
+                });
+
+                this.mic.mediaRecorder.start(1000);
+            };
+
+            // Event listener untuk menerima data transkrip
+            this.socket.onmessage = (message) => {
+                console.log("Menerima data dari Deepgram:", message.data); // <-- console.log untuk cek penerimaan
+                this.transcriptionResults(JSON.parse(message.data));
+            };
+
+            this.socket.onerror = (error) => {
+                console.error("WebSocket error:", error);
+                alert("Terjadi kesalahan pada koneksi WebSocket.");
+            };
+
+            this.socket.onclose = () => {
+                console.log("WebSocket connection closed.");
+                this.settings.transcription = false;
+            };
+
+        } catch (error) {
+            console.error("Error starting transcription:", error);
+            alert("Gagal memulai transkripsi.");
+            this.settings.transcription = false; // Reset status jika ada error
+        }
+    },
+
         async transcriptionResults(data) {
             if (!data?.channel?.alternatives?.length) return;
             const { is_final, channel } = data;
