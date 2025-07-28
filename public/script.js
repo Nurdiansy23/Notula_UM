@@ -78,8 +78,10 @@ const app = new Vue({
                 if (!MediaRecorder.isTypeSupported("audio/webm")) {
                     throw new Error("Browser tidak mendukung format audio/webm");
                 }
-                this.mic.mediaRecorder = new MediaRecorder(this.mic.stream, { mimeType: "audio/webm" });
-                console.log("Mikrofon berhasil diakses.");
+                this.mic.mediaRecorder.addEventListener("dataavailable", (event) => {
+  if (event.data.size > 0 && this.socket.readyState === WebSocket.OPEN) {
+    console.log("Mengirim data audio ke Deepgram..."); // <-- TAMBAHKAN INI
+    this.socket.send(event.data);
             } catch (err) {
                 console.error("Error accessing microphone:", err);
                 alert(`Gagal mengakses mikrofon: ${err.message}`);
@@ -110,7 +112,9 @@ const app = new Vue({
                     });
                     this.mic.mediaRecorder.start(1000);
                 };
-                this.socket.onmessage = (message) => this.transcriptionResults(JSON.parse(message.data));
+              this.socket.onmessage = (message) => {
+  console.log("Menerima data dari Deepgram:", message.data); // <-- TAMBAHKAN INI
+  this.transcriptionResults(JSON.parse(message.data));
                 this.socket.onerror = (error) => {
                     console.error("WebSocket error:", error);
                     alert("Terjadi kesalahan pada koneksi WebSocket.");
