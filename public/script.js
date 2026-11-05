@@ -163,55 +163,46 @@ async beginTranscription(type = "single") {
             ["token", key]
         );
 
-        this.socket.onopen = () => {
-            console.log("Deepgram WebSocket connected.");
+       
+this.socket.onopen = () => {
+    console.log("Deepgram WebSocket connected.");
 
-            this.settings.transcription = type;
+    const recorder = this.mic.mediaRecorder;
 
-            // Mengirim audio ke Deepgram
-            this.mic.mediaRecorder.ondataavailable = (event) => {
-                if (
-                    event.data.size > 0 &&
-                    this.socket &&
-                    this.socket.readyState === WebSocket.OPEN
-                ) {
-                    this.socket.send(event.data);
-                    console.log("Audio terkirim ke Deepgram.");
-                }
-            };
+    if (!recorder) {
+        console.error("MediaRecorder tidak tersedia.");
+        return;
+    }
 
-            this.mic.mediaRecorder.start(1000);
-        };
+    // Hindari listener data audio yang terduplikasi
+    recorder.ondataavailable = (event) => {
+        if (
+            event.data.size > 0 &&
+            this.socket &&
+            this.socket.readyState === WebSocket.OPEN
+        ) {
+            this.socket.send(event.data);
+            console.log("Audio terkirim ke Deepgram.");
+        }
+    };
 
-        // Menerima hasil transkripsi
-        this.socket.onmessage = (message) => {
-            try {
-                const data = JSON.parse(message.data);
+    // Hanya mulai jika recorder belum berjalan
+    if (recorder.state === "inactive") {
+        recorder.start(1000);
+        console.log("MediaRecorder berhasil dimulai.");
+    } else if (recorder.state === "recording") {
+        console.log(
+            "MediaRecorder sudah berjalan, tidak perlu start ulang."
+        );
+    } else {
+        console.error(
+            "Status MediaRecorder tidak valid:",
+            recorder.state
+        );
+    }
 
-                console.log("Hasil Deepgram:", data);
-
-                this.transcriptionResults(data);
-
-            } catch (err) {
-                console.error("Error parsing transcript:", err);
-            }
-        };
-
-        this.socket.onerror = (error) => {
-            console.error("Deepgram WebSocket error:", error);
-
-            alert("Koneksi Deepgram mengalami kesalahan.");
-        };
-
-        this.socket.onclose = (event) => {
-            console.log(
-                "WebSocket closed:",
-                event.code,
-                event.reason
-            );
-
-            this.settings.transcription = false;
-        };
+    this.settings.transcription = type;
+};
 
     } catch (error) {
         console.error("Error starting transcription:", error);
