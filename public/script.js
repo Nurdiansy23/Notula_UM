@@ -214,49 +214,163 @@ this.socket.onopen = () => {
 },
 
 
-        async transcriptionResults(data) {
-            if (!data?.channel?.alternatives?.length) return;
-            const { is_final, channel } = data;
-            const words = channel.alternatives[0].words || [];
-            if (!words.length) return;
+       
+async transcriptionResults(data) {
+    const alternative = data?.channel?.alternatives?.[0];
 
-            const rawId = words[0].speaker ?? 0;
-            if (!(rawId in this.lockedSpeakers)) {
-                const used = Object.values(this.lockedSpeakers);
-                let n = 1;
-                while (used.includes(`Speaker ${n}`)) n++;
-                this.lockedSpeakers[rawId] = `Speaker ${n}`;
-            }
-            const speaker = this.lockedSpeakers[rawId];
+    if (!alternative) return;
 
-            this.currentSegmentWords = words.map(w => w.punctuated_word || w.word);
+    // Abaikan hasil sementara agar tidak menimpa segmen final.
+    if (data.is_final !== true) {
+        console.log("Transkrip sementara:", alternative.transcript);
+        return;
+    }
 
-            if (this.currentSpeaker && speaker !== this.currentSpeaker) {
-                await this.flushSegment();
-            } else if (is_final) {
-                await this.flushSegment();
-                this.lastWordTime = Date.now();
+    const words = Array.isArray(alternative.words)
+        ? alternative.words
+        : [];
+
+    // Jika Deepgram tidak mengirim words, gunakan transcript.
+    if (!words.length) {
+        const transcript = alternative.transcript?.trim();
+
+        if (!transcript) return;
+
+        const rawId = 0;
+
+        if (!(rawId in this.lockedSpeakers)) {
+            this.lockedSpeakers[rawId] = "Speaker 1";
+        }
+
+        this.currentSpeaker = this.lockedSpeakers[rawId];
+        this.currentSegmentWords = [transcript];
+
+        await this.flushSegment();
+
+        console.log("Transkrip berhasil disimpan:", transcript);
+        return;
+    }
+
+    // Kelompokkan kata berdasarkan pembicara.
+    const segments = [];
+    let currentGroup = null;
+
+    for (const word of words) {
+        const rawId = word.speaker ?? 0;
+        const text = word.punctuated_word || word.word;
+
+        if (!text) continue;
+
+        if (!currentGroup || currentGroup.rawId !== rawId) {
+            currentGroup = {
+                rawId,
+                words: []
+            };
+
+            segments.push(currentGroup);
+        }
+
+        currentGroup.words.push(text);
+    }
+
+    // Simpan setiap segmen pembicara.
+    for (const segment of segments) {
+        const rawId = segment.rawId;
+
+        if (!(rawId in this.lockedSpeakers)) {
+            const used = Object.values(this.lockedSpeakers);
+            let n = 1;
+
+            while (used.includes(`Speaker ${n}`)) {
+                n++;
             }
-            this.currentSpeaker = speaker;
-        },
-        async flushSegment() {
-            if (!this.currentSegmentWords.length || !this.currentSpeaker) return;
-            const rawText = this.currentSegmentWords.join(' ').trim();
-            let formatted = rawText;
-            try {
-                const resp = await fetch('/punctuate', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ text: rawText })
-                });
-                const json = await resp.json();
-                if (json.formattedText) formatted = json.formattedText;
-            } catch (e) {
-                console.error('Punctuation error:', e);
-            }
-            this.allTopics[this.currentTopicIndex].phrases.push({ speaker: this.currentSpeaker, word: formatted.trim() });
-            this.currentSegmentWords = [];
-        },
+
+            this.$set(
+                this.lockedSpeakers,
+                rawId,
+                `Speaker ${n}`
+            );
+        }
+
+        // Isi speaker terlebih dahulu sebelum flushSegment.
+        this.currentSpeaker = this.lockedSpeakers[rawId];
+
+        this.currentSegmentWords = [...segment.words];
+
+        console.log(
+            "Menyimpan transkrip:",
+            this.currentSpeaker,
+            this.currentSegmentWords.join(" ")
+        );
+
+        await this.flushSegment();
+    }
+
+    console.log("Transkrip final berhasil diproses.");
+},
+
+       
+async flushSegment() {
+    if (
+        !this.currentSegmentWords.length ||
+        !this.currentSpeaker
+    ) return;
+
+    const rawText = this.currentSegmentWords.join(" ").trim();
+
+    if (!rawText) return;
+
+    // Salin data sebelum proses asynchronous.
+    const speaker = this.currentSpeaker;
+    const words = [...this.currentSegmentWords];
+
+    // Kosongkan segmen agar tidak tersimpan dua kali.
+    this.currentSegmentWords = [];
+
+    let formatted = rawText;
+
+    try {
+        const resp = await fetch("/punctuate", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                text: rawText
+            })
+        });
+
+        if (!resp.ok) {
+            throw new Error(`HTTP ${resp.status}`);
+        }
+
+        const json = await resp.json();
+
+        if (json.formattedText) {
+            formatted = json.formattedText;
+        }
+
+    } catch (e) {
+        console.error("Punctuation error:", e);
+        // Tetap simpan teks asli jika API tanda baca gagal.
+    }
+
+    if (
+        this.allTopics[this.currentTopicIndex]
+    ) {
+        this.allTopics[this.currentTopicIndex].phrases.push({
+            speaker: speaker,
+            word: formatted.trim()
+        });
+
+        console.log(
+            "Transkrip masuk ke allTopics:",
+            speaker,
+            formatted
+        );
+    }
+},
+
         async fixPunctuation() { },
         async stopTranscription() {
   // Simpan segmen terakhir yang mungkin masih tertahan
