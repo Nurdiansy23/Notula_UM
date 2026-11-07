@@ -143,16 +143,16 @@ async beginTranscription(type = "single") {
         }
 
         // Konfigurasi Deepgram
-        const params = new URLSearchParams({
-            model: "nova-2",
-            punctuate: "true",
-            diarize: "true",
-            diarize_speaker_count: "18",
-            smart_format: "true",
-            language: "id",
-            encoding: "opus",
-            sample_rate: "48000"
-        });
+        
+const params = new URLSearchParams({
+    model: "nova-2",
+    punctuate: "true",
+    diarize: "true",
+    diarize_speaker_count: "18",
+    smart_format: "true",
+    language: "id"
+});
+
 
         const wsUrl =
             "wss://api.deepgram.com/v1/listen?" +
@@ -173,6 +173,51 @@ this.socket.onopen = () => {
         console.error("MediaRecorder tidak tersedia.");
         return;
     }
+    
+// Menerima hasil transkripsi dari Deepgram
+this.socket.onmessage = async (event) => {
+    try {
+        const data = JSON.parse(event.data);
+
+        console.log("RESPONS DEEPGRAM:", data);
+
+        if (data.type === "Results") {
+            const transcript =
+                data.channel?.alternatives?.[0]?.transcript;
+
+            console.log("HASIL TRANSKRIP:", transcript);
+
+            if (transcript) {
+                await this.transcriptionResults(data);
+            }
+        } else {
+            console.log("Deepgram message:", data);
+        }
+
+    } catch (error) {
+        console.error(
+            "Gagal memproses respons Deepgram:",
+            error
+        );
+    }
+};
+
+// Menangani error WebSocket
+this.socket.onerror = (error) => {
+    console.error("Deepgram WebSocket error:", error);
+};
+
+// Menangani koneksi terputus
+this.socket.onclose = (event) => {
+    console.log(
+        "Deepgram WebSocket closed:",
+        event.code,
+        event.reason
+    );
+
+    this.settings.transcription = false;
+};
+
 
     // Hindari listener data audio yang terduplikasi
     recorder.ondataavailable = (event) => {
