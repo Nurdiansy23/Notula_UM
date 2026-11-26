@@ -203,9 +203,12 @@
     </main>
     
     <footer>
-      <img src="https://cdn.glitch.global/a1583462-4354-4d91-89dc-e33a7f5b7f50/logo_um.png?v=1714622545856" alt="Logo UM" />
-      <a href="#" @click.prevent="fetchSummaryAndDownload()"> <img src="https://cdn.glitch.global/5dd1ecc8-1471-4d5a-b953-964b91da39b3/edit.jpg?v=1741578799034" alt="Unduh Transkrip" style="width: 30px; height: 30px;" />
-      </a>
+     <img src="/images/logo_um.png" alt="Logo UM" />
+      <a href="#" @click.prevent="fetchSummaryAndDownload()">
+    <img src="/images/edit.jpg"
+         alt="Unduh Transkrip"
+         style="width: 30px; height: 30px; object-fit: contain;" />
+</a>
     </footer>
 
     <div v-if="showSpeakerEditor" class="modal-overlay">
